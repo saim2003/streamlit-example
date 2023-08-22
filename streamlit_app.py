@@ -1,38 +1,54 @@
-from collections import namedtuple
-import altair as alt
-import math
+import os
 import pandas as pd
-import streamlit as st
+import google_auth_oauthlib.flow
+import googleapiclient.discovery
+import googleapiclient.errors
 
-"""
-# Welcome to Streamlit!
+API_KEY = 'AIzaSyDi27OID7eh35pvpNFTX6Ui0tspGXl48mY'
 
-Edit `/streamlit_app.py` to customize this app to your heart's desire :heart:
+youtube = googleapiclient.discovery.build('youtube', 'v3', developerKey=API_KEY)
 
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
+video_id = 'jV7qK1kfD70'
 
-In the meantime, below is an example of what you can do with just a few lines of code:
-"""
+def get_all_video_comments(video_id):
+    comments = []
+    next_page_token = None
+    while True:
+        try:
+            request = youtube.commentThreads().list(
+                part='snippet',
+                videoId=video_id,
+                order='relevance',
+                textFormat='plainText',
+                pageToken=next_page_token
+            )
+            response = request.execute()
+            comments.extend(response['items'])
+            next_page_token = response.get('nextPageToken')
+            if not next_page_token:
+                break
+        except googleapiclient.errors.HttpError as e:
+            print(f'An error occurred: {e}')
+            break
+    return comments
 
+def sort_comments_by_votes(comments):
+    sorted_comments = sorted(comments, key=lambda x: x['snippet']['topLevelComment']['snippet']['likeCount'], reverse=True)
+    return sorted_comments
 
-with st.echo(code_location='below'):
-    total_points = st.slider("Number of points in spiral", 1, 5000, 2000)
-    num_turns = st.slider("Number of turns in spiral", 1, 100, 9)
+all_comments = get_all_video_comments(video_id)
+sorted_comments = sort_comments_by_votes(all_comments)
 
-    Point = namedtuple('Point', 'x y')
-    data = []
+# Convert sorted_comments to a pandas DataFrame
+comments_data = []
+for comment in sorted_comments:
+    snippet = comment['snippet']['topLevelComment']['snippet']
+    comments_data.append({
+        'Author': snippet['authorDisplayName'],
+        'Comment': snippet['textDisplay'],
+        'Likes': snippet['likeCount'],
+    })
 
-    points_per_turn = total_points / num_turns
+df = pd.DataFrame(comments_data)
+df
 
-    for curr_point_num in range(total_points):
-        curr_turn, i = divmod(curr_point_num, points_per_turn)
-        angle = (curr_turn + 1) * 2 * math.pi * i / points_per_turn
-        radius = curr_point_num / total_points
-        x = radius * math.cos(angle)
-        y = radius * math.sin(angle)
-        data.append(Point(x, y))
-
-    st.altair_chart(alt.Chart(pd.DataFrame(data), height=500, width=500)
-        .mark_circle(color='#0068c9', opacity=0.5)
-        .encode(x='x:Q', y='y:Q'))
